@@ -695,7 +695,7 @@ func TestAccAWSMqBroker_updateSecurityGroup(t *testing.T) {
 				Config: testAccMqBrokerConfig_updateUsersSecurityGroups(sgName, brokerName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckAwsMqBrokerExists("aws_mq_broker.test"),
-					resource.TestCheckResourceAttr("aws_mq_broker.test", "user.1074486012.password", "TestTest9999"),
+					resource.TestCheckResourceAttr("aws_mq_broker.test", "user.6404715923.password", "TestTest9999"),
 					resource.TestCheckResourceAttr("aws_mq_broker.test", "security_groups.#", "1"),
 				),
 			},

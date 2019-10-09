@@ -381,20 +381,6 @@ func resourceAwsMqBrokerRead(d *schema.ResourceData, meta interface{}) error {
 func resourceAwsMqBrokerUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).mqconn
 
-	rebootRequired := true
-
-	// Changes to security_groups can be applied directly without a reboot
-	if d.HasChange("security_groups") {
-		_, err := conn.UpdateBroker(&mq.UpdateBrokerRequest{
-			BrokerId:       aws.String(d.Id()),
-			SecurityGroups: expandStringSet(d.Get("security_groups").(*schema.Set)),
-		})
-		if err != nil {
-			return err
-		}
-		rebootRequired = false
-	}
-
 	if d.HasChange("configuration") || d.HasChange("logs") {
 		_, err := conn.UpdateBroker(&mq.UpdateBrokerRequest{
 			BrokerId:      aws.String(d.Id()),
@@ -404,20 +390,18 @@ func resourceAwsMqBrokerUpdate(d *schema.ResourceData, meta interface{}) error {
 		if err != nil {
 			return err
 		}
-		rebootRequired = true
 	}
 
 	if d.HasChange("user") {
 		o, n := d.GetChange("user")
-		var err error
-		rebootRequired, err = updateAwsMqBrokerUsers(conn, d.Id(),
+		err := updateAwsMqBrokerUsers(conn, d.Id(),
 			o.(*schema.Set).List(), n.(*schema.Set).List())
 		if err != nil {
 			return err
 		}
 	}
 
-	if d.Get("apply_immediately").(bool) && rebootRequired {
+	if d.Get("apply_immediately").(bool) {
 		_, err := conn.RebootBroker(&mq.RebootBrokerInput{
 			BrokerId: aws.String(d.Id()),
 		})
@@ -444,6 +428,17 @@ func resourceAwsMqBrokerUpdate(d *schema.ResourceData, meta interface{}) error {
 			},
 		}
 		_, err = stateConf.WaitForState()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Changes to security_groups can be applied directly without a reboot
+	if d.HasChange("security_groups") {
+		_, err := conn.UpdateBroker(&mq.UpdateBrokerRequest{
+			BrokerId:       aws.String(d.Id()),
+			SecurityGroups: expandStringSet(d.Get("security_groups").(*schema.Set)),
+		})
 		if err != nil {
 			return err
 		}
@@ -517,38 +512,32 @@ func waitForMqBrokerDeletion(conn *mq.MQ, id string) error {
 	return err
 }
 
-func updateAwsMqBrokerUsers(conn *mq.MQ, bId string, oldUsers, newUsers []interface{}) (bool, error) {
-	updatedUsers := false
-
+func updateAwsMqBrokerUsers(conn *mq.MQ, bId string, oldUsers, newUsers []interface{}) error {
 	createL, deleteL, updateL, err := diffAwsMqBrokerUsers(bId, oldUsers, newUsers)
 	if err != nil {
-		return updatedUsers, err
+		return err
 	}
 
-	// mark users as updated if there are any creates/deletes/updates
 	for _, c := range createL {
 		_, err := conn.CreateUser(c)
-		updatedUsers = true
 		if err != nil {
-			return updatedUsers, err
+			return err
 		}
 	}
 	for _, d := range deleteL {
 		_, err := conn.DeleteUser(d)
-		updatedUsers = true
 		if err != nil {
-			return updatedUsers, err
+			return err
 		}
 	}
 	for _, u := range updateL {
 		_, err := conn.UpdateUser(u)
-		updatedUsers = true
 		if err != nil {
-			return updatedUsers, err
+			return err
 		}
 	}
 
-	return updatedUsers, nil
+	return nil
 }
 
 func diffAwsMqBrokerUsers(bId string, oldUsers, newUsers []interface{}) (
